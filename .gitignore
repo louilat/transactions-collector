@@ -1,2 +1,3 @@
 *.ipynb
 *.parquet
+deployment/secret.yaml
