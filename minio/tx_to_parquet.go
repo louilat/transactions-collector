@@ -32,6 +32,7 @@ func SaveTxRecordsToParquet(endpoint, bucket, key, accessKeyID, secretAccessKey 
 
 	pw.CompressionType = parquet.CompressionCodec_GZIP
 
+	fmt.Println("Starting writing in file...")
 	for _, d := range rec {
 		err = pw.Write(d)
 		if err != nil {
@@ -45,6 +46,7 @@ func SaveTxRecordsToParquet(endpoint, bucket, key, accessKeyID, secretAccessKey 
 		return err
 	}
 	fw.Close()
+	fmt.Println("File closed")
 
 	// r := bytes.NewReader(&b)
 	_, err = minioClient.FPutObject(bucket, key, "output.parquet", minio.PutObjectOptions{})
@@ -53,6 +55,8 @@ func SaveTxRecordsToParquet(endpoint, bucket, key, accessKeyID, secretAccessKey 
 		fmt.Println("four")
 		return err
 	}
+
+	fmt.Println("Output successfully uploaded to minio!")
 
 	err = os.Remove("output.parquet")
 	if err != nil {

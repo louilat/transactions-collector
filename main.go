@@ -57,12 +57,14 @@ func main() {
 		}
 
 		// Save transactions to minio
-		key := "transactions-datasource/raw-transactions/transactions_snapshot_date=" + fmt.Sprint(day)[:10] + "/raw_transactions.json"
+		fmt.Println("Generating and saving outputs...")
+		key := "transactions-datasource/raw-transactions/transactions_snapshot_date=" + fmt.Sprint(day)[:10] + "/raw_transactions.parquet"
 		err = minio.SaveTxRecordsToParquet(endpoint, bucket, key, accessKeyId, secretAccessKey, transactions)
 		if err != nil {
 			panic(err)
 		}
 	}
+	fmt.Println("Done!")
 }
 
 func QueryTxPerDay(backend *ethclient.Client, day time.Time, blockref *big.Int, finderstep int64) ([]tps.Transaction, error) {
