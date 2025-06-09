@@ -24,4 +24,4 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: louilat/aave-data-api:latest
+          tags: louilat/transactions-collector:latest

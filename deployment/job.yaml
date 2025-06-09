@@ -29,5 +29,5 @@ spec:
           value: "2024-01-14"
         - name: STOP_DATE
           value: "2024-01-15"
-      restartPolicy: onFailure
+      restartPolicy: OnFailure
   backoffLimit: 4
