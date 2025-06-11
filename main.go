@@ -28,6 +28,12 @@ func main() {
 
 	fmt.Println("Starting Job...")
 
+	// Collecting borrowers list
+	borrowers, err := minio.ReadUsersList(accessKeyId, secretAccessKey)
+	if err != nil {
+		panic(err)
+	}
+
 	// Parse dates
 	startDate, err := time.Parse("2006-01-02", start)
 	if err != nil {
@@ -51,7 +57,7 @@ func main() {
 		ref := references[time.Date(day.Year(), day.Month(), 1, 0, 0, 0, 0, time.UTC).Unix()]
 
 		// Query transactions
-		transactions, err := QueryTxPerDay(client, day, ref, 7000)
+		transactions, err := QueryTxPerDay(client, borrowers, day, ref, 7000)
 		if err != nil {
 			panic(err)
 		}
@@ -67,7 +73,7 @@ func main() {
 	fmt.Println("Done!")
 }
 
-func QueryTxPerDay(backend *ethclient.Client, day time.Time, blockref *big.Int, finderstep int64) ([]tps.Transaction, error) {
+func QueryTxPerDay(backend *ethclient.Client, borrowersList tps.UsersList, day time.Time, blockref *big.Int, finderstep int64) ([]tps.Transaction, error) {
 	start := day.Unix()
 	end := day.AddDate(0, 0, 1).Unix()
 
@@ -86,8 +92,10 @@ func QueryTxPerDay(backend *ethclient.Client, day time.Time, blockref *big.Int, 
 		return make([]tps.Transaction, 0), err
 	}
 
+	txRecords := tps.TransactionRecord{Records: make([]tps.Transaction, 0)}
+	c := make(chan *types.Transaction, 10)
+
 	blockNumber := new(big.Int)
-	txRecords := make([]tps.Transaction, 0)
 	for blockNumber.Set(startblock); blockNumber.Cmp(endblock) <= 0; blockNumber.Add(blockNumber, big.NewInt(1)) {
 		// Query the block corresponding to block number
 		fmt.Printf("Treating block %v / %v\n", blockNumber, endblock)
@@ -98,44 +106,62 @@ func QueryTxPerDay(backend *ethclient.Client, day time.Time, blockref *big.Int, 
 
 		// Add each transaction of the block
 		for _, tx := range block.Transactions() {
-			var signer types.Signer
-			switch {
-			case tx.Type() == types.AccessListTxType:
-				signer = types.NewEIP2930Signer(tx.ChainId())
-			case tx.Type() == types.DynamicFeeTxType:
-				signer = types.NewLondonSigner(tx.ChainId())
-			case tx.Type() == types.BlobTxType:
-				signer = types.NewCancunSigner(tx.ChainId())
-			case tx.Type() == types.SetCodeTxType:
-				signer = types.NewPragueSigner(tx.ChainId())
-			default:
-				signer = types.NewEIP155Signer(tx.ChainId())
-			}
-			sender, err := types.Sender(signer, tx)
-			if err != nil {
-				return make([]tps.Transaction, 0), err
-			}
+			c <- tx
+			go func() {
+				// fmt.Printf("Treating transaction %v / %v\n", i+1, len(block.Transactions()))
+				var signer types.Signer
+				switch {
+				case tx.Type() == types.AccessListTxType:
+					signer = types.NewEIP2930Signer(tx.ChainId())
+				case tx.Type() == types.DynamicFeeTxType:
+					signer = types.NewLondonSigner(tx.ChainId())
+				case tx.Type() == types.BlobTxType:
+					signer = types.NewCancunSigner(tx.ChainId())
+				case tx.Type() == types.SetCodeTxType:
+					signer = types.NewPragueSigner(tx.ChainId())
+				default:
+					signer = types.NewEIP155Signer(tx.ChainId())
+				}
+				sender, err := types.Sender(signer, tx)
+				if err != nil {
+					txRecords.Append(tps.Transaction{
+						BlockNumber: block.Number().Int64(),
+						BlockTime:   int64(block.Time()),
+						BlockHash:   block.Hash().Hex(),
+						BlockNbTx:   len(block.Transactions()),
+						TxHash:      tx.Hash().Hex(),
+						Error:       err.Error(),
+					})
+					<-c
+					fmt.Printf("WARNING!! Error occured for tx %v\n", tx.Hash())
+					return
+				}
 
-			receiver := ""
-			if tx.To() != nil {
-				receiver = tx.To().Hex()
-			}
+				receiver := ""
+				if tx.To() != nil {
+					receiver = tx.To().Hex()
+				}
 
-			txRecords = append(txRecords, tps.Transaction{
-				BlockNumber: block.Number().Int64(),
-				BlockTime:   int64(block.Time()),
-				BlockHash:   block.Hash().Hex(),
-				BlockNbTx:   len(block.Transactions()),
-				TxHash:      tx.Hash().Hex(),
-				From:        sender.Hex(),
-				To:          receiver,
-				TxGas:       int64(tx.Gas()),
-				TxGasPrice:  tx.GasPrice().Int64(),
-				TxValue:     tx.Value().String(),
-				TxNonce:     int64(tx.Nonce()),
-				TxData:      hex.EncodeToString(tx.Data()),
-			})
+				if borrowersList.Contains(sender.Hex()) || borrowersList.Contains(receiver) {
+					txRecords.Append(tps.Transaction{
+						BlockNumber: block.Number().Int64(),
+						BlockTime:   int64(block.Time()),
+						BlockHash:   block.Hash().Hex(),
+						BlockNbTx:   len(block.Transactions()),
+						TxHash:      tx.Hash().Hex(),
+						From:        sender.Hex(),
+						To:          receiver,
+						TxGas:       int64(tx.Gas()),
+						TxGasPrice:  tx.GasPrice().Int64(),
+						TxValue:     tx.Value().String(),
+						TxNonce:     int64(tx.Nonce()),
+						TxData:      hex.EncodeToString(tx.Data()),
+					})
+					fmt.Printf("Number of transactions recorded: %v\n", len(txRecords.Records))
+				}
+			}()
+			<-c
 		}
 	}
-	return txRecords, nil
+	return txRecords.Records, nil
 }

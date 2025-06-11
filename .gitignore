@@ -1,3 +1,5 @@
 *.ipynb
 *.parquet
 deployment/secret.yaml
+*.json
+*.exe

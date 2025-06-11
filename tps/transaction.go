@@ -1,5 +1,7 @@
 package tps
 
+import "sync"
+
 type Transaction struct {
 	BlockNumber int64  `json:"blockNumber" parquet:"name=blockNumber, type=INT64"`
 	BlockTime   int64  `json:"blockTime" parquet:"name=blockTime, type=INT64"`
@@ -13,4 +15,16 @@ type Transaction struct {
 	TxValue     string `json:"txValue" parquet:"name=txValue, type=BYTE_ARRAY, convertedtype=UTF8"`
 	TxNonce     int64  `json:"txNonce" parquet:"name=txNonce, type=INT64"`
 	TxData      string `json:"txData" parquet:"name=txData, type=BYTE_ARRAY, convertedtype=UTF8"`
+	Error       string `json:"error" parquet:"name=error, type=BYTE_ARRAY, convertedtype=UTF8"`
+}
+
+type TransactionRecord struct {
+	Records []Transaction
+	mu      sync.Mutex
+}
+
+func (tr *TransactionRecord) Append(t Transaction) {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	tr.Records = append(tr.Records, t)
 }
